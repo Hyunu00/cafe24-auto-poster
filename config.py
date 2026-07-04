@@ -9,6 +9,7 @@ load_dotenv()
 class Config:
     gemini_api_key: str
     pexels_api_key: str
+    unsplash_access_key: str
     wp_url: str
     wp_username: str
     wp_app_password: str
@@ -22,6 +23,7 @@ def load_config() -> Config:
     return Config(
         gemini_api_key=os.environ["GEMINI_API_KEY"],
         pexels_api_key=os.environ["PEXELS_API_KEY"],
+        unsplash_access_key=os.getenv("UNSPLASH_ACCESS_KEY", ""),
         wp_url=os.environ["WP_URL"].rstrip("/"),
         wp_username=os.environ["WP_USERNAME"],
         wp_app_password=os.environ["WP_APP_PASSWORD"],

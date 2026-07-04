@@ -7,7 +7,7 @@ from pathlib import Path
 import httpx
 
 from config import Config
-from wordpress.media import upload_featured_image
+from wordpress.media import upload_featured_image, replace_body_images
 
 LOG_PATH = Path("logs/post_log.json")
 
@@ -31,19 +31,34 @@ def _save_log(logs: list[dict]) -> None:
 
 
 async def post_to_wordpress(topic: str, post: dict, config: Config, category_id: int | None = None) -> bool:
-    """대표 이미지 업로드 후 WordPress에 글을 등록하고 성공 여부를 반환."""
+    """본문 이미지 치환 + 대표 이미지 업로드 후 WordPress에 글을 등록.
+
+    본문 → 대표 순으로 처리하며 seen_urls를 공유해 같은 글에 동일 이미지 X.
+    """
     url = f"{config.wp_url}/wp-json/wp/v2/posts"
     headers = {
         "Authorization": _auth_header(config),
         "Content-Type": "application/json",
     }
 
-    # 대표 이미지 업로드
-    media_id = await upload_featured_image(topic, config)
+    # 한 글 내에서 중복 회피용 — 본문/대표 이미지가 공유
+    seen_urls: set[str] = set()
+
+    # 1. 본문 이미지 먼저 (검색어가 더 구체적이라 좋은 매치를 우선 가져감)
+    content_with_images = await replace_body_images(
+        post["content"],
+        post.get("image_queries", []),
+        config,
+        seen_urls,
+    )
+
+    # 2. 대표 이미지 (본문에서 안 쓴 이미지 중에서)
+    hero_queries = post.get("hero_image_query") or [topic]
+    media_id = await upload_featured_image(hero_queries, config, seen_urls)
 
     payload = {
         "title": post["title"],
-        "content": post["content"],
+        "content": content_with_images,
         "excerpt": post.get("excerpt", ""),
         "status": config.post_status,
         "categories": [category_id if category_id is not None else config.post_category_id],
@@ -57,6 +72,7 @@ async def post_to_wordpress(topic: str, post: dict, config: Config, category_id:
         "topic": topic,
         "category_id": category_id,
         "title": post["title"],
+        "format": post.get("format"),
         "posted_at": datetime.now(timezone.utc).isoformat(),
         "success": False,
         "post_id": None,
